@@ -5,6 +5,8 @@ import 'package:ble_peripheral/ble_peripheral.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:http/http.dart' as http;
 
+import 'mesh_packet.dart';
+
 class PeripheralService {
   static const String serviceUUID =
       "12345678-1234-5678-1234-56789abcdef0";
@@ -12,7 +14,9 @@ class PeripheralService {
   static const String characteristicUUID =
       "87654321-4321-8765-4321-fedcba987654";
 
+  final Set<String> processedPackets = {};
   String? connectedDeviceId;
+  Function(MeshPacket)? onRebroadcastRequired;
 
   Future<void> initialize() async {
     print(
@@ -46,9 +50,26 @@ class PeripheralService {
     BlePeripheral.setWriteRequestCallback(
           (deviceId, characteristicId, offset, value) {
         try {
-          String message =
+
+
+          String json =
           utf8.decode(value!);
 
+          print(
+              "******** RAW RECEIVED ********");
+
+          print(json);
+
+          MeshPacket packet =
+          MeshPacket.fromJson(json);
+
+          if(processedPackets.contains(
+              packet.packetId)){
+            return;
+          }
+
+          processedPackets.add(
+              packet.packetId);
           print(
               "******** MESSAGE RECEIVED ********");
 
@@ -59,11 +80,11 @@ class PeripheralService {
               "CHARACTERISTIC : $characteristicId");
 
           print(
-              "MESSAGE : $message");
+              "MESSAGE : ${packet.payload}");
 
           print(
               "***********************************");
-              processPacket(message);
+              processPacket(packet);
         } catch (e) {
           print(
               "\$\$\$\$\$\$\$ MESSAGE PARSE ERROR \$\$\$\$\$\$\$");
@@ -124,10 +145,13 @@ class PeripheralService {
       print(
           "MESSAGE : $message");
 
+      MeshPacket packet =
+      MeshPacket.create(message);
+
       await BlePeripheral.updateCharacteristic(
         characteristicId: characteristicUUID,
         value: Uint8List.fromList(
-          utf8.encode(message),
+          utf8.encode(packet.toJson()),
         ),
       );
 
@@ -141,7 +165,7 @@ class PeripheralService {
     }
   }
   Future<void> processPacket(
-      String packet,
+      MeshPacket packet,
       ) async {
 
     final connectivity =
@@ -153,6 +177,7 @@ class PeripheralService {
 
       print(
           "\$\$\$\$\$\$\$ NO INTERNET FOUND \$\$\$\$\$\$\$");
+      onRebroadcastRequired?.call(packet);
 
       return;
     }
@@ -160,8 +185,11 @@ class PeripheralService {
     print(
         "******** INTERNET AVAILABLE ********");
 
-    await hitDummyApi(packet);
+    await hitDummyApi(packet.payload);
   }
+
+
+
   Future<void> hitDummyApi(
       String packet,
       ) async {

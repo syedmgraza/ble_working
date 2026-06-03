@@ -48,6 +48,16 @@ class _MyHomeState extends State<MyHome> {
       });
     };
 
+    peripheralService.onRebroadcastRequired =
+        (packet) async {
+
+      print(
+          "******** REBROADCAST REQUESTED ********");
+
+      await bleService.broadcastPacket(
+          packet);
+    };
+
     initializeBle();
   }
 

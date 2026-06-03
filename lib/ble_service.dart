@@ -6,10 +6,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:ble_working/peripheral_service.dart';
 
+import 'mesh_packet.dart';
+
 class BlEService {
   BluetoothCharacteristic? chatCharacteristic;
   BluetoothDevice? connectedDevice;
   Function(String)? onMessageReceived;
+
+  final List<BluetoothDevice>
+  connectedDevices = [];
 
   Future<bool> isDeviceSupported() {
     return FlutterBluePlus.isSupported;
@@ -88,7 +93,7 @@ class BlEService {
       );
 
       connectedDevice = device;
-
+      connectedDevices.add(device);
       print(
           "******** CONNECTED SUCCESSFULLY ********");
 
@@ -187,6 +192,87 @@ class BlEService {
     }
   }
 
+  Future<void> broadcastPacket(
+      MeshPacket packet) async {
+
+    print(
+        "******** BROADCAST START ********");
+
+    print(
+        "CONNECTED DEVICES = ${connectedDevices.length}");
+
+    for(var device in connectedDevices){
+
+      print(
+          "******** TARGET DEVICE ${device.remoteId} ********");
+
+      try{
+
+        List<BluetoothService>
+        services =
+        await device.discoverServices();
+
+        print(
+            "SERVICES = ${services.length}");
+
+        for(var service in services){
+
+          print(
+              "SERVICE UUID = ${service.uuid}");
+
+          if(service.uuid
+              .toString()
+              .toLowerCase()
+              ==
+              PeripheralService
+                  .serviceUUID
+                  .toLowerCase()){
+
+            print(
+                "******** MESH SERVICE FOUND ********");
+
+            for(var characteristic
+            in service.characteristics){
+
+              print(
+                  "CHAR UUID = ${characteristic.uuid}");
+
+              if(characteristic.uuid
+                  .toString()
+                  .toLowerCase()
+                  ==
+                  PeripheralService
+                      .characteristicUUID
+                      .toLowerCase()){
+
+                print(
+                    "******** FORWARDING PACKET ********");
+
+                print(
+                    packet.toJson());
+
+                await characteristic.write(
+                  utf8.encode(
+                    packet.toJson(),
+                  ),
+                );
+
+                print(
+                    "******** PACKET FORWARDED ********");
+              }
+            }
+          }
+        }
+
+      }catch(e){
+
+        print(
+            "\$\$\$\$\$\$\$ BROADCAST ERROR \$\$\$\$\$\$\$");
+
+        print(e);
+      }
+    }
+  }
   Future<void> sendMessage(
       String message,
       ) async {
@@ -203,8 +289,11 @@ class BlEService {
       print(
           "MESSAGE : $message");
 
+      MeshPacket packet =
+      MeshPacket.create(message);
+
       await chatCharacteristic!.write(
-        utf8.encode(message),
+        utf8.encode(packet.toJson()),
       );
 
       print(
