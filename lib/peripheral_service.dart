@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:ble_peripheral/ble_peripheral.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:http/http.dart' as http;
 
 class PeripheralService {
   static const String serviceUUID =
@@ -61,6 +63,7 @@ class PeripheralService {
 
           print(
               "***********************************");
+              processPacket(message);
         } catch (e) {
           print(
               "\$\$\$\$\$\$\$ MESSAGE PARSE ERROR \$\$\$\$\$\$\$");
@@ -133,6 +136,68 @@ class PeripheralService {
     } catch (e) {
       print(
           "\$\$\$\$\$\$\$ SEND ERROR \$\$\$\$\$\$\$");
+
+      print(e);
+    }
+  }
+  Future<void> processPacket(
+      String packet,
+      ) async {
+
+    final connectivity =
+    await Connectivity()
+        .checkConnectivity();
+
+    if (connectivity.contains(
+        ConnectivityResult.none)) {
+
+      print(
+          "\$\$\$\$\$\$\$ NO INTERNET FOUND \$\$\$\$\$\$\$");
+
+      return;
+    }
+
+    print(
+        "******** INTERNET AVAILABLE ********");
+
+    await hitDummyApi(packet);
+  }
+  Future<void> hitDummyApi(
+      String packet,
+      ) async {
+
+    try {
+
+      print(
+          "******** HITTING API ********");
+
+      final response =
+      await http.post(
+        Uri.parse(
+          "https://jsonplaceholder.typicode.com/posts",
+        ),
+        headers: {
+          "Content-Type":
+          "application/json",
+        },
+        body: jsonEncode({
+          "message": packet,
+        }),
+      );
+
+      print(
+          "******** API RESPONSE ********");
+
+      print(
+          response.statusCode);
+
+      print(
+          response.body);
+
+    } catch (e) {
+
+      print(
+          "\$\$\$\$\$\$\$ API ERROR \$\$\$\$\$\$\$");
 
       print(e);
     }

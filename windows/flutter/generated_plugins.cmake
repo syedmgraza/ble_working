@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   ble_peripheral
+  connectivity_plus
   flutter_blue_plus_winrt
   permission_handler_windows
 )
