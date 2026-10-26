@@ -7,8 +7,6 @@ import '../bank/bank_server_api.dart';
 import '../security/server_key_store.dart';
 import 'payment_dashboard.dart';
 
-const _sky = Color(0xff36a9e8);
-
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
   @override
@@ -118,41 +116,103 @@ class _SplashScreen extends StatelessWidget {
   const _SplashScreen();
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: _sky,
+    backgroundColor: const Color(0xfff5f9fc),
     body: Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 92,
-            height: 92,
-            decoration: const BoxDecoration(
+            width: 78,
+            height: 78,
+            decoration: BoxDecoration(
               color: Colors.white,
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(25),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x14168bd0),
+                  blurRadius: 25,
+                  offset: Offset(0, 9),
+                ),
+              ],
             ),
             child: const Icon(
               Icons.account_balance_wallet_rounded,
-              color: _sky,
-              size: 48,
+              color: Color(0xff168bd0),
+              size: 38,
             ),
           ),
           const SizedBox(height: 18),
           const Text(
             'BluePay',
             style: TextStyle(
-              color: Colors.white,
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
+              color: Color(0xff142b3b),
+              fontSize: 30,
+              letterSpacing: -.6,
+              fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
           const Text(
-            'Payments, even when you are offline',
-            style: TextStyle(color: Colors.white70),
+            'Payments that keep moving',
+            style: TextStyle(color: Color(0xff718491), fontSize: 14),
+          ),
+          const SizedBox(height: 30),
+          const SizedBox(
+            width: 76,
+            child: LinearProgressIndicator(
+              minHeight: 3,
+              borderRadius: BorderRadius.all(Radius.circular(3)),
+              color: Color(0xff35a9e8),
+              backgroundColor: Color(0xffdcecf5),
+            ),
           ),
         ],
       ),
     ),
+  );
+}
+
+class _EntryBenefit extends StatelessWidget {
+  const _EntryBenefit({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, color: const Color(0xff168bd0), size: 21),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: Color(0xff142b3b),
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                color: Color(0xff627582),
+                height: 1.4,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
   );
 }
 
@@ -237,46 +297,41 @@ class _AccountEntryState extends State<_AccountEntry> {
     TextInputType? keyboard,
     bool secret = false,
     String? Function(String?)? validator,
-  }) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
-    child: TextFormField(
-      controller: controller,
-      keyboardType: keyboard,
-      obscureText: secret,
-      validator: validator,
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-        filled: true,
-        fillColor: Colors.white,
+  }) {
+    final icon = switch (label) {
+      'Full name' => Icons.person_outline_rounded,
+      'Address' => Icons.location_on_outlined,
+      'Date of birth (YYYY-MM-DD)' => Icons.calendar_month_outlined,
+      'Mobile number' => Icons.phone_outlined,
+      'Email address' => Icons.alternate_email_rounded,
+      'Opening balance (₹)' => Icons.account_balance_wallet_outlined,
+      'Create your 4-digit PIN' => Icons.lock_outline_rounded,
+      _ => Icons.account_circle_outlined,
+    };
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextFormField(
+        controller: controller,
+        keyboardType: keyboard,
+        obscureText: secret,
+        validator: validator,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, size: 20),
+          fillColor: Colors.white,
+        ),
       ),
-    ),
-  );
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xfff2f9fd),
-    appBar: AppBar(
-      title: const Text('Welcome to BluePay'),
-      backgroundColor: Colors.transparent,
-    ),
-    body: SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(20),
+  Widget _accountForm() => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'Your account, your wallet',
-            style: TextStyle(fontSize: 25, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _existing
-                ? 'Load your bank profile to continue.'
-                : 'Create a bank account to start paying.',
-            style: const TextStyle(color: Colors.black54),
-          ),
-          const SizedBox(height: 20),
           SegmentedButton<bool>(
+            showSelectedIcon: false,
             segments: const [
               ButtonSegment(value: false, label: Text('New account')),
               ButtonSegment(value: true, label: Text('Existing account')),
@@ -287,7 +342,7 @@ class _AccountEntryState extends State<_AccountEntry> {
               _error = null;
             }),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 24),
           if (_existing)
             _field(
               _identifier,
@@ -320,13 +375,13 @@ class _AccountEntryState extends State<_AccountEntry> {
                   ),
                   _field(
                     _email,
-                    'Email',
+                    'Email address',
                     keyboard: TextInputType.emailAddress,
                     validator: _required,
                   ),
                   _field(
                     _initialAmount,
-                    'Initial online balance (₹)',
+                    'Opening balance (₹)',
                     keyboard: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
@@ -336,7 +391,7 @@ class _AccountEntryState extends State<_AccountEntry> {
                   ),
                   _field(
                     _pin,
-                    'Create 4-digit PIN',
+                    'Create your 4-digit PIN',
                     keyboard: TextInputType.number,
                     secret: true,
                     validator: (v) => (v?.length ?? 0) < 4
@@ -346,27 +401,161 @@ class _AccountEntryState extends State<_AccountEntry> {
                 ],
               ),
             ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+          if (_error != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
+          ],
+          const SizedBox(height: 12),
           SizedBox(
-            height: 52,
+            height: 54,
             child: FilledButton(
               onPressed: _loading ? null : _submit,
               child: _loading
-                  ? const CircularProgressIndicator()
-                  : Text(_existing ? 'Continue' : 'Create account'),
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(_existing ? 'Continue to BluePay' : 'Create account'),
             ),
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'Bank account actions require an internet connection. Payments can be prepared offline after your account and bank key are saved.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.black54, fontSize: 12),
+          const SizedBox(height: 16),
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.lock_outline, size: 16, color: Color(0xff718491)),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Account setup needs internet. Payments can be prepared offline after setup.',
+                  style: TextStyle(color: Color(0xff718491), fontSize: 12),
+                ),
+              ),
+            ],
           ),
         ],
+      ),
+    ),
+  );
+
+  Widget _entryIntro({required bool compact}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xffe1f3fc),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.account_balance_wallet_rounded,
+              color: Color(0xff168bd0),
+            ),
+          ),
+          const SizedBox(width: 11),
+          const Text(
+            'BluePay',
+            style: TextStyle(
+              color: Color(0xff142b3b),
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+      SizedBox(height: compact ? 25 : 44),
+      Text(
+        _existing ? 'Welcome back.' : 'Your money,\nready when you are.',
+        style: TextStyle(
+          color: const Color(0xff142b3b),
+          fontSize: compact ? 28 : 38,
+          height: 1.13,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.7,
+        ),
+      ),
+      const SizedBox(height: 12),
+      Text(
+        _existing
+            ? 'Sign in with your account details to view your wallet and continue.'
+            : 'Create your BluePay account and get your offline wallet ready for secure mesh payments.',
+        style: const TextStyle(
+          color: Color(0xff627582),
+          fontSize: 15,
+          height: 1.5,
+        ),
+      ),
+      if (!compact) ...[
+        const SizedBox(height: 32),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xffe9f6fc),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _EntryBenefit(
+                icon: Icons.shield_outlined,
+                title: 'Encrypted by design',
+                subtitle: 'Your payment details stay protected in transit.',
+              ),
+              SizedBox(height: 18),
+              _EntryBenefit(
+                icon: Icons.bluetooth_connected,
+                title: 'Works across the mesh',
+                subtitle: 'Nearby BluePay phones can relay packets offline.',
+              ),
+            ],
+          ),
+        ),
+      ],
+    ],
+  );
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 850;
+          final horizontal = constraints.maxWidth < 420 ? 18.0 : 28.0;
+          return SingleChildScrollView(
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontal,
+              vertical: wide ? 42 : 24,
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1080),
+                child: wide
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: _entryIntro(compact: false)),
+                          const SizedBox(width: 54),
+                          Expanded(child: _accountForm()),
+                        ],
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _entryIntro(compact: true),
+                          const SizedBox(height: 24),
+                          _accountForm(),
+                        ],
+                      ),
+              ),
+            ),
+          );
+        },
       ),
     ),
   );
