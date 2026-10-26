@@ -1,328 +1,175 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
+import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:ble_working/peripheral_service.dart';
 
 import 'mesh_packet.dart';
+import 'peripheral_service.dart';
 
+class _Peer {
+  const _Peer(this.device, this.characteristic, this.connectionSubscription);
+  final BluetoothDevice device;
+  final BluetoothCharacteristic characteristic;
+  final StreamSubscription<BluetoothConnectionState> connectionSubscription;
+}
+
+/// Foreground Android BLE discovery and app-level packet forwarding.
 class BlEService {
-  BluetoothCharacteristic? chatCharacteristic;
-  BluetoothDevice? connectedDevice;
-  Function(String)? onMessageReceived;
+  final Map<String, _Peer> _peers = {};
+  final Set<String> _connecting = {};
+  StreamSubscription<List<ScanResult>>? _scanResults;
+  bool _running = false;
+  String? lastError;
+  void Function(int count)? onPeerCountChanged;
+  void Function(MeshPacket packet, String peerDeviceId)? onPacketSent;
 
-  final List<BluetoothDevice>
-  connectedDevices = [];
+  int get connectedPeerCount => _peers.length;
 
-  Future<bool> isDeviceSupported() {
-    return FlutterBluePlus.isSupported;
-  }
+  Future<bool> isDeviceSupported() => FlutterBluePlus.isSupported;
 
-  StreamSubscription<BluetoothAdapterState> bluetoothOn() {
-    return FlutterBluePlus.adapterState.listen(
-          (BluetoothAdapterState state) async {
-        switch (state) {
-          case BluetoothAdapterState.on:
-            debugPrint('Bluetooth is ON');
-            break;
-
-          case BluetoothAdapterState.off:
-            debugPrint('Bluetooth is OFF');
-
-            if (!kIsWeb && Platform.isAndroid) {
-              try {
-                await FlutterBluePlus.turnOn();
-              } catch (e) {
-                debugPrint('Unable to turn on Bluetooth: $e');
-              }
-            }
-            break;
-
-          default:
-            debugPrint('Bluetooth state: $state');
+  Future<void> startAutoDiscovery() async {
+    if (_running) return;
+    _running = true;
+    _scanResults ??= FlutterBluePlus.onScanResults.listen((results) {
+      for (final result in results) {
+        if (result.advertisementData.serviceUuids.any(
+          (uuid) =>
+              uuid.toString().toLowerCase() ==
+              PeripheralService.serviceUUID.toLowerCase(),
+        )) {
+          unawaited(_connect(result.device));
         }
-      },
-    );
+      }
+    }, onError: (Object error) => lastError = error.toString());
+    unawaited(_scanLoop());
   }
 
-  Future<void> scanDevices() async {
-    await FlutterBluePlus.adapterState
-        .where((state) => state == BluetoothAdapterState.on)
-        .first;
-
-    FlutterBluePlus.onScanResults.listen(
-          (results) {
-        for (ScanResult result in results) {
-          print(
-              "******** DEVICE ${result.device.remoteId} ********");
-
-          print(
-              "NAME : ${result.advertisementData.advName}");
-
-          print(
-              "SERVICE UUIDS : ${result.advertisementData.serviceUuids}");
+  Future<void> _scanLoop() async {
+    while (_running) {
+      try {
+        final adapterState = await FlutterBluePlus.adapterState.first;
+        if (adapterState != BluetoothAdapterState.on) {
+          lastError = 'Bluetooth is turned off';
+          await Future<void>.delayed(const Duration(seconds: 2));
+          continue;
         }
-      },
-      onError: (e) {
-        debugPrint('Scan Error: $e');
-      },
-    );
-
-    await FlutterBluePlus.startScan(
-      timeout: const Duration(seconds: 15),
-    );
-
-    await FlutterBluePlus.isScanning
-        .where((value) => value == false)
-        .first;
-
-    debugPrint('Scan Completed');
+        await FlutterBluePlus.startScan(
+          withServices: [Guid(PeripheralService.serviceUUID)],
+          timeout: const Duration(seconds: 15),
+        );
+        await FlutterBluePlus.isScanning.where((scanning) => !scanning).first;
+      } catch (error) {
+        lastError = error.toString();
+        await Future<void>.delayed(const Duration(seconds: 2));
+      }
+    }
   }
 
-  Future<void> connectToDevice(
-      BluetoothDevice device,
-      ) async {
+  Future<void> _connect(BluetoothDevice device) async {
+    final id = device.remoteId.toString();
+    if (_peers.containsKey(id) || !_connecting.add(id)) return;
     try {
-      print(
-          "******** CONNECTING TO ${device.remoteId} ********");
-
       await device.connect(
         license: License.nonprofit,
+        timeout: const Duration(seconds: 12),
       );
-
-      connectedDevice = device;
-      connectedDevices.add(device);
-      print(
-          "******** CONNECTED SUCCESSFULLY ********");
-
-      List<BluetoothService> services =
-      await device.discoverServices();
-
-      print(
-          "******** TOTAL SERVICES ${services.length} ********");
-
-      for (var service in services) {
-        print(
-            "******** SERVICE ${service.uuid} ********");
-
-        if (service.uuid
-            .toString()
-            .toLowerCase() ==
-            PeripheralService.serviceUUID
-                .toLowerCase()) {
-          print(
-              "******** OUR SERVICE FOUND ********");
-
-          for (var characteristic
-          in service.characteristics) {
-            print(
-                "******** CHAR ${characteristic.uuid} ********");
-
-            if (characteristic.uuid
-                .toString()
-                .toLowerCase() ==
-                PeripheralService
-                    .characteristicUUID
-                    .toLowerCase()) {
-
-              chatCharacteristic =
-                  characteristic;
-
-              print(
-                  "******** CHAT CHARACTERISTIC FOUND ********");
-
-              try {
-
-                await characteristic.setNotifyValue(true);
-
-                print(
-                    "******** NOTIFICATIONS ENABLED ********");
-
-                characteristic.lastValueStream.listen(
-                      (data) {
-
-                    try {
-
-                      if (data.isEmpty) return;
-
-                      String msg =
-                      utf8.decode(data);
-
-                      print(
-                          "******** MESSAGE FROM PERIPHERAL ********");
-
-                      print(
-                          "MESSAGE : $msg");
-
-                      onMessageReceived?.call(msg);
-
-                    } catch (e) {
-
-                      print(
-                          "\$\$\$\$\$\$\$ NOTIFICATION ERROR \$\$\$\$\$\$\$");
-
-                      print(e);
-                    }
-                  },
-                );
-
-              } catch (e) {
-
-                print(
-                    "\$\$\$\$\$\$\$ ENABLE NOTIFICATION ERROR \$\$\$\$\$\$\$");
-
-                print(e);
-              }
-            }
+      try {
+        await device.requestMtu(247);
+      } catch (_) {
+        // The negotiated default MTU is still supported by the frame codec.
+      }
+      final services = await device.discoverServices();
+      BluetoothCharacteristic? characteristic;
+      for (final service in services) {
+        if (service.uuid.toString().toLowerCase() !=
+            PeripheralService.serviceUUID.toLowerCase()) {
+          continue;
+        }
+        for (final candidate in service.characteristics) {
+          if (candidate.uuid.toString().toLowerCase() ==
+              PeripheralService.characteristicUUID.toLowerCase()) {
+            characteristic = candidate;
+            break;
           }
         }
       }
-
-      if (chatCharacteristic == null) {
-        print(
-            "\$\$\$\$\$\$\$ CHAT CHARACTERISTIC NOT FOUND \$\$\$\$\$\$\$");
+      if (characteristic == null) {
+        await device.disconnect();
+        return;
       }
-    } catch (e) {
-      print(
-          "\$\$\$\$\$\$\$ CONNECTION ERROR \$\$\$\$\$\$\$");
-
-      print(e);
-    }
-  }
-
-  Future<void> broadcastPacket(
-      MeshPacket packet) async {
-
-    print(
-        "******** BROADCAST START ********");
-
-    print(
-        "CONNECTED DEVICES = ${connectedDevices.length}");
-
-    for(var device in connectedDevices){
-
-      print(
-          "******** TARGET DEVICE ${device.remoteId} ********");
-
-      try{
-
-        List<BluetoothService>
-        services =
-        await device.discoverServices();
-
-        print(
-            "SERVICES = ${services.length}");
-
-        for(var service in services){
-
-          print(
-              "SERVICE UUID = ${service.uuid}");
-
-          if(service.uuid
-              .toString()
-              .toLowerCase()
-              ==
-              PeripheralService
-                  .serviceUUID
-                  .toLowerCase()){
-
-            print(
-                "******** MESH SERVICE FOUND ********");
-
-            for(var characteristic
-            in service.characteristics){
-
-              print(
-                  "CHAR UUID = ${characteristic.uuid}");
-
-              if(characteristic.uuid
-                  .toString()
-                  .toLowerCase()
-                  ==
-                  PeripheralService
-                      .characteristicUUID
-                      .toLowerCase()){
-
-                print(
-                    "******** FORWARDING PACKET ********");
-
-                print(
-                    packet.toJson());
-
-                await characteristic.write(
-                  utf8.encode(
-                    packet.toJson(),
-                  ),
-                );
-
-                print(
-                    "******** PACKET FORWARDED ********");
-              }
-            }
-          }
+      late final StreamSubscription<BluetoothConnectionState>
+      connectionSubscription;
+      connectionSubscription = device.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected) {
+          _peers.remove(id);
+          unawaited(connectionSubscription.cancel());
+          onPeerCountChanged?.call(_peers.length);
         }
+      });
+      _peers[id] = _Peer(device, characteristic, connectionSubscription);
+      onPeerCountChanged?.call(_peers.length);
+    } catch (error) {
+      lastError = error.toString();
+      try {
+        await device.disconnect();
+      } catch (_) {}
+    } finally {
+      _connecting.remove(id);
+    }
+  }
 
-      }catch(e){
-
-        print(
-            "\$\$\$\$\$\$\$ BROADCAST ERROR \$\$\$\$\$\$\$");
-
-        print(e);
+  Future<int> broadcastPacket(MeshPacket packet) async {
+    if (packet.ttl <= 0) return 0;
+    final bytes = packet.toJson().codeUnits;
+    var sent = 0;
+    for (final peer in _peers.values.toList()) {
+      try {
+        final maxFrameBytes = math.max(20, peer.device.mtuNow - 3).toInt();
+        final frames = _encodeFrames(bytes, maxFrameBytes);
+        for (final frame in frames) {
+          await peer.characteristic.write(frame);
+        }
+        sent++;
+        onPacketSent?.call(packet, peer.device.remoteId.toString());
+      } catch (error) {
+        lastError = error.toString();
       }
     }
-  }
-  Future<void> sendMessage(
-      String message,
-      ) async {
-    if (chatCharacteristic == null) {
-      print(
-          "\$\$\$\$\$\$\$ NO CHARACTERISTIC FOUND \$\$\$\$\$\$\$");
-      return;
-    }
-
-    try {
-      print(
-          "******** SENDING MESSAGE ********");
-
-      print(
-          "MESSAGE : $message");
-
-      MeshPacket packet =
-      MeshPacket.create(message);
-
-      await chatCharacteristic!.write(
-        utf8.encode(packet.toJson()),
-      );
-
-      print(
-          "******** MESSAGE SENT ********");
-    } catch (e) {
-      print(
-          "\$\$\$\$\$\$\$ SEND ERROR \$\$\$\$\$\$\$");
-
-      print(e);
-    }
+    return sent;
   }
 
-  Future<void> disconnect() async {
-    try {
-      if (connectedDevice != null) {
-        await connectedDevice!.disconnect();
-
-        print(
-            "******** DEVICE DISCONNECTED ********");
-      }
-    } catch (e) {
-      print(
-          "\$\$\$\$\$\$\$ DISCONNECT ERROR \$\$\$\$\$\$\$");
-
-      print(e);
-    }
+  List<List<int>> _encodeFrames(List<int> packet, int maxFrameBytes) {
+    const headerBytes = 5;
+    final chunkSize = maxFrameBytes - headerBytes;
+    if (chunkSize <= 0) throw StateError('BLE MTU is too small.');
+    final total = (packet.length / chunkSize).ceil();
+    if (total > 0xffff) throw StateError('Payment packet exceeds BLE limit.');
+    return List.generate(total, (index) {
+      final start = index * chunkSize;
+      final end = math.min(start + chunkSize, packet.length).toInt();
+      return <int>[
+        0xB1,
+        (index >> 8) & 0xff,
+        index & 0xff,
+        (total >> 8) & 0xff,
+        total & 0xff,
+        ...packet.sublist(start, end),
+      ];
+    });
   }
 
-  Future<void> stopScan() async {
+  Future<void> stop() async {
+    _running = false;
     await FlutterBluePlus.stopScan();
+    await _scanResults?.cancel();
+    _scanResults = null;
+    for (final peer in _peers.values.toList()) {
+      await peer.connectionSubscription.cancel();
+      try {
+        await peer.device.disconnect();
+      } catch (_) {}
+    }
+    _peers.clear();
+    onPeerCountChanged?.call(0);
   }
 }

@@ -1,49 +1,57 @@
 import 'dart:convert';
+
 import 'package:uuid/uuid.dart';
 
+/// BLE transport envelope, matching the bank server's MeshPacket JSON model.
 class MeshPacket {
-  final String packetId;
-  final int ttl;
-  final String payload;
-
-  MeshPacket({
+  const MeshPacket({
     required this.packetId,
     required this.ttl,
-    required this.payload,
+    required this.createdAt,
+    required this.ciphertext,
   });
 
-  factory MeshPacket.create(String payload) {
-    return MeshPacket(
-      packetId: const Uuid().v4(),
-      ttl: 5,
-      payload: payload,
+  static const int defaultTtl = 5;
+
+  final String packetId;
+  final int ttl;
+  final int createdAt;
+  final String ciphertext;
+
+  factory MeshPacket.create(String ciphertext) => MeshPacket(
+    packetId: const Uuid().v4(),
+    ttl: defaultTtl,
+    createdAt: DateTime.now().millisecondsSinceEpoch,
+    ciphertext: ciphertext,
+  );
+
+  String toJson() => jsonEncode({
+    'packetId': packetId,
+    'ttl': ttl,
+    'createdAt': createdAt,
+    'ciphertext': ciphertext,
+  });
+
+  factory MeshPacket.fromJson(String source) {
+    final map = jsonDecode(source) as Map<String, dynamic>;
+    final packet = MeshPacket(
+      packetId: map['packetId'] as String,
+      ttl: (map['ttl'] as num).toInt(),
+      createdAt: (map['createdAt'] as num).toInt(),
+      ciphertext: map['ciphertext'] as String,
     );
+    if (packet.packetId.isEmpty ||
+        packet.ciphertext.isEmpty ||
+        packet.ttl < 0) {
+      throw const FormatException('Invalid mesh packet');
+    }
+    return packet;
   }
 
-  String toJson() {
-    return jsonEncode({
-      "packetId": packetId,
-      "ttl": ttl,
-      "payload": payload,
-    });
-  }
-
-  factory MeshPacket.fromJson(String json) {
-    Map<String, dynamic> map =
-    jsonDecode(json);
-
-    return MeshPacket(
-      packetId: map["packetId"],
-      ttl: map["ttl"],
-      payload: map["payload"],
-    );
-  }
-
-  MeshPacket decrementTTL() {
-    return MeshPacket(
-      packetId: packetId,
-      ttl: ttl - 1,
-      payload: payload,
-    );
-  }
+  MeshPacket decrementTtl() => MeshPacket(
+    packetId: packetId,
+    ttl: ttl - 1,
+    createdAt: createdAt,
+    ciphertext: ciphertext,
+  );
 }
