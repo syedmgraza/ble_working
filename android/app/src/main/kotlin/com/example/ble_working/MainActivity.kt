@@ -1,6 +1,8 @@
 package com.example.ble_working
 
 import android.util.Base64
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import org.json.JSONArray
 import org.json.JSONObject
 import io.flutter.embedding.engine.FlutterEngine
@@ -17,6 +19,7 @@ import java.security.spec.X509EncodedKeySpec
 import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.OAEPParameterSpec
 import javax.crypto.spec.PSource
@@ -80,6 +83,29 @@ class MainActivity : FlutterActivity() {
                                 .putString("server_public_key", key.filterNot { it.isWhitespace() })
                                 .apply()
                             result.success(null)
+                        }
+                        "loadAccount" -> {
+                            val preferences = getSharedPreferences("bluepay_demo", MODE_PRIVATE)
+                            val encrypted = preferences.getString("encrypted_account_json", null)
+                            val legacy = preferences.getString("account_json", null)
+                            result.success(encrypted?.let { decryptAccount(it) } ?: legacy)
+                        }
+                        "saveAccount" -> {
+                            val json = call.argument<String>("accountJson")
+                                ?: error("accountJson is required")
+                            getSharedPreferences("bluepay_demo", MODE_PRIVATE)
+                                .edit().putString("encrypted_account_json", encryptAccount(json))
+                                .remove("account_json").apply()
+                            result.success(null)
+                        }
+                        "clearAccount" -> {
+                            getSharedPreferences("bluepay_demo", MODE_PRIVATE)
+                                .edit().remove("account_json").remove("encrypted_account_json").apply()
+                            result.success(null)
+                        }
+                        "sha256Hex" -> {
+                            val value = call.argument<String>("value") ?: error("value is required")
+                            result.success(sha256(value.toByteArray(Charsets.UTF_8)))
                         }
                         "appendAuditRecord" -> {
                             val record = JSONObject().apply {
@@ -148,6 +174,41 @@ class MainActivity : FlutterActivity() {
         .getInstance("SHA-256")
         .digest(bytes)
         .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+    private fun accountEncryptionKey(): SecretKey {
+        val alias = "bluepay_account_store_key"
+        val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (keyStore.getKey(alias, null) as? SecretKey)?.let { return it }
+        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
+            init(
+                KeyGenParameterSpec.Builder(
+                    alias,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                )
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setRandomizedEncryptionRequired(true)
+                    .build()
+            )
+        }.generateKey()
+    }
+
+    private fun encryptAccount(value: String): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, accountEncryptionKey())
+        val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+        return Base64.encodeToString(cipher.iv + encrypted, Base64.NO_WRAP)
+    }
+
+    private fun decryptAccount(value: String): String {
+        val packed = Base64.decode(value, Base64.DEFAULT)
+        require(packed.size > GCM_IV_BYTES) { "Invalid encrypted account record" }
+        val iv = packed.copyOfRange(0, GCM_IV_BYTES)
+        val ciphertext = packed.copyOfRange(GCM_IV_BYTES, packed.size)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, accountEncryptionKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
+        return String(cipher.doFinal(ciphertext), Charsets.UTF_8)
+    }
 
     private fun pruneSeenHashes() {
         if (seenCiphertexts.size < 256) return
